@@ -1,2 +1,2 @@
-# epi754_practicum
+# Epi 754 Practicum
 Practicum for Epi Methods 754
