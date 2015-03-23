@@ -1,0 +1,182 @@
+                             CODEBOOK HIVVERT
+Codebook for EPI CORE Class Data: Accessing WIHS and MACS Datasets      01-23-2007
+
+
+Start  ____Field____                      Section/
+Column Len  Format       Variable         Question          Description                    Code
+------ --- --------- ----------------- ------------ ------------------------------ ------------------------------
+    1    6 6.0       STUDYID                        Study Identification #         100000= 100000
+                                                                                   .
+                                                                                   .
+                                                                                   599996= 599996
+
+    7    3 3.0       VISIT                          Visit #                        10= Visit 1
+                                                                                   .
+                                                                                   .
+                                                                                   430= Visit 43
+                                                                                   75= Visit 7.5
+                                                                                   365= Visit 36.5
+
+   10   10 mmddyy10. VDATE                          Visit date                     10/01/1984= October 1, 1984
+                                                                                   .
+                                                                                   .
+                                                                                   09/30/2005= September 30, 2005
+
+   20    1 1.0       COHORT                         HIV Study                      1= MACS
+                                                                                   2= WIHS
+
+   21    1 1.0       CENTER                         Interview site                 1= Baltimore
+                                                                                   2= Chicago
+                                                                                   3= Pittsburgh
+                                                                                   4= Los Angeles
+                                                                                   5= Bronx
+                                                                                   6= Brooklyn
+                                                                                   7= Washington DC
+                                                                                   8= San Francisco
+
+   22    4           CD4N                           # of CD4 positive cells        0000= 0 cells
+                                                    (helpers)                      .
+                                                                                   .
+                                                                                   9999= 9999 cells
+                                                                                   .= Missing
+
+   26    4 4.1       CD4P                           % CD4 positive cells (helpers) 00.0= 0.0 %
+                                                                                   .
+                                                                                   .
+                                                                                   99.9= 99.9 %
+                                                                                   .= Missing
+
+   30    5           CD8N                           # of CD8 positive cells        00000= 0 cells
+                                                    (suppressors)                  .
+                                                                                   .
+                                                                                   99999= 99999 cells
+                                                                                   .= Missing
+
+   35    4 4.1       CD8P                           % CD8 positive cells           000= 0.0 %
+                                                    (supressors)                   .
+                                                                                   .
+                                                                                   999= 99.9 %
+                                                                                   .= Missing
+
+   39    8 8.0       VLOAD                          HIV RNA (cp/ml)                50= 50 cp/ml
+                                                                                   .
+                                                                                   .
+                                                                                   99999999= 99999999 cp/ml
+                                                                                   .= Missing
+                                                                                   40= <50 copies/ml
+                                                                                   50= 50 copies/ml
+                                                                                   300= <400 copies/ml
+                                                                                   400= 400 copies/ml
+
+   47    4 4.0       LLQ_VL                         Lower limit of quantification  50= Roche Ultrasensitive &
+                                                    of HIV RNA assay                   Chiron
+                                                                                   80= NucliSens, 1 ml input
+                                                                                   150= Unknown
+                                                                                   400= Roche Amplicor &
+                                                                                        NucliSens, .2 ml input
+                                                                                   500= Quantiplex or Chiron 2nd
+                                                                                        generation
+                                                                                   4000= NASBA, .1 ml input
+
+   51    6 6.0       WBC                            White blood cells (mm3)        500= 500/mm3
+                                                                                   .
+                                                                                   .
+                                                                                   55000= 55000/mm3
+
+   57    2 2.0       LYMPH                          Lymphocytes (%)                10= 10 %
+                                                                                   .
+                                                                                   .
+                                                                                   91= 91 %
+
+   59    1           THRPY                          Type of therapy used since     0= No therapy
+                                                    last visit                     1= Mono therapy
+                                                                                   2= Combination therapy
+                                                                                   3= HAART
+                                                                                   4= HAART (HU/ddI defined)
+                                                                                   Blank= Missing
+
+   60    2 2.0       CESD                           Overall depression score       0
+                                                                                   .
+                                                                                   .
+                                                                                   16= Depression Threshold
+                                                                                   .
+                                                                                   .
+                                                                                   60
+                                                                                   Blank= Missing
+
+   62    4 4.0       MSEX6MO                        Number of male sex partners    0= 0 Partners
+                                                    since last visit               .
+                                                                                   .
+                                                                                   1344= 1344 Partners
+                                                                                   999= 999+ partners (MACS)
+
+   66    4 4.0       BASEMSEX                       # lifetime male sex partners   0= 0 Partners
+                                                    (baseline visit)               .
+                                                                                   .
+                                                                                   9999= 9999 partners
+
+   70    5 5.3       HEIGHT                         Height in meters               1.240= 1.240 meters
+                                                                                   .
+                                                                                   .
+                                                                                   2.464= 2.464 meters
+
+   75    6 6.2       WEIGHT                         Weight in kilograms (kg)       10.00= 10.00 kilograms
+                                                                                   .
+                                                                                   .
+                                                                                   205.00= 205.00 kilograms
+
+   81    1 1.0       IDU                            Injection Drug use since last  0= No
+                                                    visit                          1= Yes
+
+   82    2 2.0       POTUSE                         Use marijuana/hash since last  1= Yes
+                                                    visit                          0= No
+
+   84    2 2.0       CRACKUSE                       Use crack/freebase cocaine     1= Yes
+                                                    since last visit               0= No
+
+   86    2 2.0       COCUSE                         Use cocaine since last visit   1= Yes
+                                                                                   0= No
+
+   88    2 2.0       HERUSE                         Use heroin since last visit    1= Yes
+                                                                                   0= No
+
+   90    2 2.0       AMPHUSE                        Use amphetamines/uppers since  1= Yes
+                                                    last visit                     0= No
+                                                                                   -7= Refusal
+                                                                                   -8= Don't know
+                                                                                   -9 or Blank= Missing
+
+   92    1 1.0       POPUSE                         Use of Poppers (nitrate        0= No
+                                                    inhalers such as amyl, butyl,  1= Yes
+                                                    isopropyl nitrates)            9= Not available
+
+   93    3 3.0       SYSTOLIC                       Systolic blood pressure        000= 000
+                                                                                   .
+                                                                                   .
+                                                                                   300= 300
+
+   96    3 3.0       DIASTOLIC                      Diastolic blood pressure       000= 000
+                                                                                   .
+                                                                                   .
+                                                                                   300= 300
+
+   99    1 1.0       CURSMOKE                       Current smoker                 0= No
+                                                                                   1= Yes
+
+  100    1 1.0       FMRSMOKE                       Former Smoker                  0= No
+                                                                                   1= Yes
+
+  101    1 1.0       NVRSMOKE                       Never smoked                   0= No
+                                                                                   1= Yes
+
+  102    4 4.1       HB                             Hemoglobin (gm/dl)             1.0 = 1.0 gm/dl
+                                                                                   .
+                                                                                   .
+                                                                                   50.0= 50.0 gm/dl
+
+  106    6 $         VERSION                        Version number of data         V01.01= Version 01,                       
+                                                                                      in Visit 01.
+                                                                                   .
+                                                                                   .
+                                                                                   V99.03= Version 03,
+                                                                                      in Visit 99.
