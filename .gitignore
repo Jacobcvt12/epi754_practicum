@@ -3,3 +3,4 @@
 .RData
 *pdf
 .DS_Store
+*.Rproj
