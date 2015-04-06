@@ -1,20 +1,26 @@
 # libraries
+library(readr)
 library(dplyr)
 library(ggplot2)
 
 # read in data
-hivvert <- read.csv("data/hivvert-data04.csv") %>%
-    tbl_df()
+# hivvert <- read.csv("data/hivvert-data04.csv",
+#                     stringsAsFactors=FALSE) %>%
+#     tbl_df()
 
-hivhoriz <- read.csv("data/macswihs_horiz2013_copy-1.csv") %>%
-    tbl_df() %>%
+hivvert <- read_csv("data/hivvert-data04.csv",
+                    col_types="iiciiididdiiiiiiiddiiiiiiiiiiiidc")
+
+hivhoriz <- read_csv("data/macswihs_horiz2013_copy-1.csv") %>%
+    filter(COHORT==1) %>%
     # convert SAS numeric to date format
     mutate(sero.date=as.Date("1960-01-01") + FPOSDATE,
            sero.pos=sero.date < as.Date("2100-01-01"),
            dob=as.Date("1960-01-01") + DOB,
            base.date=as.Date("1960-01-01") + BSDATE,
            age.base=as.double(difftime(base.date, 
-                                       dob, unit="weeks"))/52.25) %>%
+#                                        dob, unit="weeks"))/52.25) %>%
+                                       dob, unit="weeks"))/52.25)
     select(STUDYID, sero.date, sero.pos, AIDSDIAG, FRSTARTD,
            RACE, age.base, STATUS, FRSTAIDD, SECAIDD, base.date)
 
@@ -22,9 +28,10 @@ hivhoriz <- read.csv("data/macswihs_horiz2013_copy-1.csv") %>%
 hiv.full <- left_join(hivvert, hivhoriz, 
                       by="STUDYID") %>%
     # only keep MACS data
-    filter(COHORT==1,
+    filter(COHORT==1) %>%
+#     filter(COHORT==1,
            # drop prevalent cases
-           STATUS != 2) %>%
+#            STATUS != 2) %>%
     # transform visit number
     mutate(visit.num=VISIT/10,
            art.date=as.Date("1960-01-01") + FRSTARTD,
@@ -65,3 +72,41 @@ hivhoriz %>% filter(STATUS==4, COHORT==1, AIDSDIAG>0) %>%
     mutate(bsdate=as.Date("1960-01-01")+BSDATE,
            frstartd=as.Date("1960-01-01")+FRSTARTD) %>%
     count(year(bsdate))
+
+# START OVER
+
+hivhoriz <- read_csv("data/macswihs_horiz2013_copy-1.csv") %>%
+    # keep MACS only
+    filter(COHORT==1,
+           # keep people with first ADI only
+           AIDSDIAG != 0) %>%
+           # date of death
+    mutate(death.date=as.Date("1960-01-01") + FRSTDTHD,
+           aids.date=as.Date("1960-01-01") + FRSTAIDD,
+           sec.aids.date=as.Date("1960-01-01") + SECAIDD,
+           frst.aids.diag=AIDSDIAG,
+           sec.aids.diag=SECAIDSDIAG,
+           haart.era.94=year(aids.date) >= 1994,
+           haart.era.96=year(aids.date) >= 1996,
+           had.sec=year(sec.aids.date) < 2100,
+           died=year(death.date) < 2100)
+
+hivvert <- read_csv("data/hivvert-data04.csv",
+                    col_types="iiciiididdiiiiiiiddiiiiiiiiiiiidc") %>%
+    mutate(visit=VISIT / 10) %>%
+    group_by(STUDYID) %>%
+#     summarise(first.wt=
+    
+
+hiv.full <- left_join(hivhoriz, 
+
+
+
+    # convert SAS numeric to date format
+    mutate(sero.date=as.Date("1960-01-01") + FPOSDATE,
+           sero.pos=sero.date < as.Date("2100-01-01"),
+           dob=as.Date("1960-01-01") + DOB,
+           base.date=as.Date("1960-01-01") + BSDATE,
+           age.base=as.double(difftime(base.date, 
+#                                        dob, unit="weeks"))/52.25) %>%
+                                       dob, unit="weeks"))/52.25)
