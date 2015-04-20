@@ -91,10 +91,11 @@ visits %>%
                                     "8"="CMV/HSV",
                                     "9"="Wasting",
                                     "10"="Recurrent PNA",
-                                    "11"="Cervical Ca"))) %>%
+                                    "11"="Cervical Ca")),
+           warn_missing=FALSE) %>%
 ggplot(., aes(x=sec.aids)) + geom_histogram() +
     xlab("Type of Secondary Aids Diagnosis") +
     ylab("Count") +
     ggtitle("Figure 1") +
-    theme(axis.text.x = element_text(angle=-45))
+    theme(axis.text.x = element_text(angle=-90))
 ```
