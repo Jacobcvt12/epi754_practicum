@@ -1,0 +1,100 @@
+---
+title:  "The Effect of a Second AIDS Defining Illness on Survival in the MACS"
+author: 
+- "[Jacob Carey](mailto:jcare15@jhu.edu)"
+- "[Matt Murrill](mmurril1@jhmi.edu)"
+- "[Kim Kunwha](khkim@jhu.edu)"
+date:   "`r Sys.Date()`"
+output: pdf_document
+abstract: |
+  We seek to investigate the effect of a second AIDS defining illness on survival. We included people who are seroprevalent as well as seroconverters. We addressed confounding using propensity scores.
+---
+
+```{r chunks, echo=FALSE}
+knitr::opts_chunk$set(echo=FALSE)
+```
+
+We read in the data.
+```{r data}
+library(readr)
+library(dplyr)
+library(ggplot2)
+library(lubridate)
+
+# read in horiz data with lots of covariates
+covariates <- read_csv("data/macswihs_horiz2013_copy-1.csv") %>%
+           # date of death
+    mutate(death.date=as.Date("1960-01-01") + FRSTDTHD,
+           # date of aids diagnosis
+           aids.date=as.Date("1960-01-01") + FRSTAIDD,
+           # date of secondary aids diagnosis
+           sec.aids.date=as.Date("1960-01-01") + SECAIDD,
+           # what was the first aids diagnosis
+           frst.aids.diag=AIDSDIAG,
+           # what was the second aids diagnosis
+           sec.aids.diag=SECAIDSDIAG,
+           # did the person have a sec aids diag
+           had.sec=year(sec.aids.date) < 2100,
+           # did the person die
+           died=year(death.date) < 2100,
+           age=as.Date("1960-01-01") + DOB,
+           exit=ifelse(!died, as.Date("1994-12-31"), death.date),
+           censor.date=as.Date("1970-01-01") + as.integer(exit),
+           last.alive=as.Date("1960-01-01") + LASTALID,
+           censor.date=ifelse(last.alive < censor.date, last.alive, 
+                              censor.date),
+           dead.at.censor=(death.date < as.Date("1994-12-31"))) %>%
+    select(STUDYID, frst.aids.diag, censor.date, sec.aids.diag,
+           dead.at.censor)
+
+# read in visit level data
+visits <- read_csv("data/hivvert-data04.csv",
+                    col_types="iiciiididdiiiiiiiddiiiiiiiiiiiidc") %>%
+    # put visits in correct 1,2, 3,... form
+    mutate(visit=VISIT / 10,
+           visit.date=mdy(VDATE),
+           haart.era.visit=year(visit.date) <= 1994) %>%
+    
+    # join to covariates
+    left_join(covariates, by=c("STUDYID")) %>%
+
+    # keep MACS only
+    filter(COHORT==1,
+           # keep people with first ADI only
+           frst.aids.diag != 0,
+           # restrict to haart era visits right now
+           haart.era.visit == TRUE) %>%
+    mutate(censor.date=as.Date("1970-01-01")+censor.date) %>%
+    select(id=STUDYID, center=CENTER, visit:dead.at.censor)
+```
+
+```{r fig1}
+# therapy <- visits %>%
+#     group_by(year(visit.date)) %>%
+#     summarise(therapy=list(table(THRPY))) %>%
+#     unnest(therapy)
+
+theme_set(theme_classic())
+
+visits %>%
+    group_by(id) %>%
+    summarise(sec.aids=min(sec.aids.diag)) %>%
+    mutate(sec.aids=plyr::revalue(as.character(sec.aids),
+                                  c("0"="No Aids",
+                                    "1"="PCP",
+                                    "2"="KS",
+                                    "3"="NHL",
+                                    "4"="Neuro",
+                                    "5"="Bacteria OI",
+                                    "6"="Fungal OI",
+                                    "7"="Protozoa",
+                                    "8"="CMV/HSV",
+                                    "9"="Wasting",
+                                    "10"="Recurrent PNA",
+                                    "11"="Cervical Ca"))) %>%
+ggplot(., aes(x=sec.aids)) + geom_histogram() +
+    xlab("Type of Secondary Aids Diagnosis") +
+    ylab("Count") +
+    ggtitle("Figure 1") +
+    theme(axis.text.x = element_text(angle=-45))
+```
