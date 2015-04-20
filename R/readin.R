@@ -75,7 +75,7 @@ hivhoriz %>% filter(STATUS==4, COHORT==1, AIDSDIAG>0) %>%
 
 # START OVER
 
-hivhoriz <- read_csv("data/macswihs_horiz2013_copy-1.csv") %>%
+covariates <- read_csv("data/macswihs_horiz2013_copy-1.csv") %>%
     # keep MACS only
     filter(COHORT==1,
            # keep people with first ADI only
