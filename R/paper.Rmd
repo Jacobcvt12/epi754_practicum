@@ -11,7 +11,8 @@ abstract: |
 ---
 
 ```{r chunks, echo=FALSE}
-knitr::opts_chunk$set(echo=FALSE)
+knitr::opts_chunk$set(echo=FALSE,
+                      message=FALSE)
 ```
 
 We read in the data.
@@ -97,5 +98,10 @@ ggplot(., aes(x=sec.aids)) + geom_histogram() +
     xlab("Type of Secondary Aids Diagnosis") +
     ylab("Count") +
     ggtitle("Figure 1") +
-    theme(axis.text.x = element_text(angle=-90))
+    theme(axis.text.x = element_text(angle=-90)) +
+    scale_x_discrete(limits=k
+```
+
+```{r naive-survival}
+# http://cran.r-project.org/web/packages/survival/vignettes/timedep.pdf
 ```
