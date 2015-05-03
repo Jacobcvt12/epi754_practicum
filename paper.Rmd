@@ -12,18 +12,23 @@ abstract: |
 
 ```{r chunks, echo=FALSE}
 knitr::opts_chunk$set(echo=FALSE,
-                      message=FALSE)
+                      message=FALSE,
+                      results='asis')
 ```
 
-We read in the data.
-```{r data}
+```{r libs}
 library(readr)
 library(dplyr)
 library(ggplot2)
 library(lubridate)
+library(survival)
+theme_set(theme_classic())
+```
 
+We read in the data.
+```{r data}
 # read in horiz data with lots of covariates
-covariates <- read_csv("data/macswihs_horiz2013_copy-1.csv") %>%
+covariates <- read_csv("../data/macswihs_horiz2013_copy-1.csv") %>%
            # date of death
     mutate(death.date=as.Date("1960-01-01") + FRSTDTHD,
            # date of aids diagnosis
@@ -44,9 +49,17 @@ covariates <- read_csv("data/macswihs_horiz2013_copy-1.csv") %>%
            last.alive=as.Date("1960-01-01") + LASTALID,
            censor.date=ifelse(last.alive < censor.date, last.alive, 
                               censor.date),
+           censor.date=as.Date("1970-01-01")+censor.date,
            dead.at.censor=(death.date < as.Date("1994-12-31"))) %>%
-    select(STUDYID, frst.aids.diag, censor.date, sec.aids.diag,
-           dead.at.censor)
+    select(STUDYID, 
+           aids.date,
+           sec.aids.date,
+           frst.aids.diag, 
+           censor.date, 
+           sec.aids.diag,
+           dead.at.censor, 
+           death.date) %>%
+    filter(year(aids.date) < 2100)
 
 # read in visit level data
 visits <- read_csv("data/hivvert-data04.csv",
@@ -65,7 +78,6 @@ visits <- read_csv("data/hivvert-data04.csv",
            frst.aids.diag != 0,
            # restrict to haart era visits right now
            haart.era.visit == TRUE) %>%
-    mutate(censor.date=as.Date("1970-01-01")+censor.date) %>%
     select(id=STUDYID, center=CENTER, visit:dead.at.censor)
 ```
 
@@ -75,9 +87,7 @@ visits <- read_csv("data/hivvert-data04.csv",
 #     summarise(therapy=list(table(THRPY))) %>%
 #     unnest(therapy)
 
-theme_set(theme_classic())
-
-visits %>%
+data.plot <- visits %>%
     group_by(id) %>%
     summarise(sec.aids=min(sec.aids.diag)) %>%
     mutate(sec.aids=plyr::revalue(as.character(sec.aids),
@@ -92,16 +102,46 @@ visits %>%
                                     "8"="CMV/HSV",
                                     "9"="Wasting",
                                     "10"="Recurrent PNA",
-                                    "11"="Cervical Ca")),
-           warn_missing=FALSE) %>%
-ggplot(., aes(x=sec.aids)) + geom_histogram() +
+                                    "11"="Cervical Ca"),
+                                  warn_missing=FALSE))
+ggplot(data.plot, aes(x=sec.aids)) + 
+    geom_histogram() +
     xlab("Type of Secondary Aids Diagnosis") +
     ylab("Count") +
     ggtitle("Figure 1") +
-    theme(axis.text.x = element_text(angle=-90)) +
-    scale_x_discrete(limits=k
+    scale_x_discrete(limits=names(sort(-table(data.plot$sec.aids)))) +
+    theme(axis.text.x = element_text(angle=-90))
 ```
 
+We fit a Cox proportional hazards model to the pre haart era data. We did not allow secondary aids diagnosis to be time varying. 
 ```{r naive-survival}
 # http://cran.r-project.org/web/packages/survival/vignettes/timedep.pdf
+# https://stat.ethz.ch/R-manual/R-devel/library/survival/html/coxph.html
+data <- covariates %>%
+    filter(year(aids.date) <= 1994) %>%
+    rowwise() %>%
+    transmute(start=aids.date,
+              stop=min(censor.date, as.Date("1994-12-31")),
+              status=(death.date <= as.Date("1994-12-31")),
+              sec.aids=(sec.aids.diag > 0)) %>%
+    mutate_each(funs(as.numeric), start, stop) %>%
+    filter(stop > start)
+
+naive.model <- coxph(Surv(start, stop, status) ~ sec.aids,
+                     data=data)
+knitr::kable(coef(summary(naive.model)),
+             caption="Naive Model")
+```
+
+```{r strat-surv}
+# strat.model <- coxph(Surv(first.aids.date, stop, dead.at.censor) ~ 
+#                      had.sec.aids + strata(haart.era),
+#                      data=data)
+```
+
+```{r propensity-score}
+# fit logit model (and nonparam?) to calculate prop score
+```
+
+```{r matching}
 ```
