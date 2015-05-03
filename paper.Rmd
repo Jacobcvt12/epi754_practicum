@@ -28,7 +28,7 @@ theme_set(theme_classic())
 We read in the data.
 ```{r data}
 # read in horiz data with lots of covariates
-covariates <- read_csv("../data/macswihs_horiz2013_copy-1.csv") %>%
+covariates <- read_csv("data/macswihs_horiz2013_copy-1.csv") %>%
            # date of death
     mutate(death.date=as.Date("1960-01-01") + FRSTDTHD,
            # date of aids diagnosis
@@ -113,7 +113,7 @@ ggplot(data.plot, aes(x=sec.aids)) +
     theme(axis.text.x = element_text(angle=-90))
 ```
 
-We fit a Cox proportional hazards model to the pre haart era data. We did not allow secondary aids diagnosis to be time varying. 
+We fit a Cox proportional hazards model to the pre haart era data. We allowed secondary aids diagnosis to be time varying. 
 ```{r naive-survival}
 # http://cran.r-project.org/web/packages/survival/vignettes/timedep.pdf
 # https://stat.ethz.ch/R-manual/R-devel/library/survival/html/coxph.html
@@ -122,13 +122,32 @@ data <- covariates %>%
     rowwise() %>%
     transmute(start=aids.date,
               stop=min(censor.date, as.Date("1994-12-31")),
-              status=(death.date <= as.Date("1994-12-31")),
-              sec.aids=(sec.aids.diag > 0)) %>%
-    mutate_each(funs(as.numeric), start, stop) %>%
-    filter(stop > start)
+              sec.aids=sec.aids.date,
+              status=(death.date <= as.Date("1994-12-31"))) %>%
+    mutate_each(funs(as.numeric), start, stop, sec.aids) %>%
+    # there are a few obs coming up where secondary and primary are 
+    # diagnosed at the same time.
+    # let's remove those.
+    filter(stop > start,
+           !is.na(sec.aids))
+
+pre.sec <- data %>%
+    rowwise() %>%
+    mutate(stop=min(stop, sec.aids),
+           sec.aids=0) %>%
+    # remove those with same date diag of first and sec aids
+    filter(start < stop)
+
+post.sec <- data %>%
+    filter(sec.aids < stop) %>%
+    mutate(start=sec.aids,
+           sec.aids=1)
+
+time.varying <- bind_rows(pre.sec, post.sec)
 
 naive.model <- coxph(Surv(start, stop, status) ~ sec.aids,
-                     data=data)
+                     data=time.varying)
+
 knitr::kable(coef(summary(naive.model)),
              caption="Naive Model")
 ```
