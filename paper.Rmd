@@ -64,6 +64,18 @@ covariates <- read_csv("data/macswihs_horiz2013_copy-1.csv") %>%
 # read in visit level data
 visits <- read_csv("data/hivvert-data04.csv",
                     col_types="iiciiididdiiiiiiiddiiiiiiiiiiiidc") %>%
+    # keep MACS only
+    filter(COHORT==1) %>%
+    select(STUDYID) %>%
+    distinct(STUDYID)
+
+covariates <- covariates %>%
+    inner_join(visits)
+```
+
+```{r fig1}
+visits <- read_csv("data/hivvert-data04.csv",
+                    col_types="iiciiididdiiiiiiiddiiiiiiiiiiiidc") %>%
     # put visits in correct 1,2, 3,... form
     mutate(visit=VISIT / 10,
            visit.date=mdy(VDATE),
@@ -79,14 +91,9 @@ visits <- read_csv("data/hivvert-data04.csv",
            # restrict to haart era visits right now
            haart.era.visit == TRUE) %>%
     select(id=STUDYID, center=CENTER, visit:dead.at.censor)
-```
 
-```{r fig1}
-# therapy <- visits %>%
-#     group_by(year(visit.date)) %>%
-#     summarise(therapy=list(table(THRPY))) %>%
-#     unnest(therapy)
-
+# only for pre haart!
+# need to do again for all data
 data.plot <- visits %>%
     group_by(id) %>%
     summarise(sec.aids=min(sec.aids.diag)) %>%
@@ -149,18 +156,153 @@ naive.model <- coxph(Surv(start, stop, status) ~ sec.aids,
                      data=time.varying)
 
 knitr::kable(coef(summary(naive.model)),
+             caption="Naive Model (All Data)")
+```
+
+```{r all-data}
+# read in horiz data with lots of covariates
+covariates <- read_csv("data/macswihs_horiz2013_copy-1.csv") %>%
+           # date of death
+    mutate(death.date=as.Date("1960-01-01") + FRSTDTHD,
+           # date of aids diagnosis
+           aids.date=as.Date("1960-01-01") + FRSTAIDD,
+           # date of secondary aids diagnosis
+           sec.aids.date=as.Date("1960-01-01") + SECAIDD,
+           # what was the first aids diagnosis
+           frst.aids.diag=AIDSDIAG,
+           # what was the second aids diagnosis
+           sec.aids.diag=SECAIDSDIAG,
+           # did the person have a sec aids diag
+           had.sec=year(sec.aids.date) < 2100,
+           # did the person die
+           died=year(death.date) < 2100,
+           dob=as.Date("1960-01-01") + DOB,
+           age.at.aids=difftime(aids.date, dob, unit="weeks") / 52.25,
+           age.at.aids=as.numeric(age.at.aids),
+           exit=death.date,
+           censor.date=as.Date("1970-01-01") + as.integer(exit),
+           last.alive=as.Date("1960-01-01") + LASTALID,
+           censor.date=ifelse(last.alive < censor.date, last.alive, 
+                              censor.date),
+           censor.date=as.Date("1970-01-01")+censor.date) %>%
+    select(STUDYID, 
+           aids.date,
+           sec.aids.date,
+           frst.aids.diag, 
+           censor.date, 
+           sec.aids.diag,
+           death.date,
+           race=RACE,
+           age.at.aids) %>%
+    filter(year(aids.date) < 2100) %>%
+    mutate(haart.era=(year(aids.date) > 1993))
+
+# what are the important confoudners that we can include for the PH model?
+# what about propensity score?
+
+# what about therapy?
+visits <- read_csv("data/hivvert-data04.csv",
+                    col_types="iiciiididdiiiiiiiddiiiiiiiiiiiidc") %>%
+    # keep MACS only
+    filter(COHORT == 1) %>% 
+    group_by(STUDYID) %>%
+    summarise(drug.use=sum(POTUSE, CRACKUSE, COCUSE, HERUSE, AMPHUSE, 
+                           POPUSE, na.rm=TRUE) > 1,
+              depression=mean(CESD, na.rm=TRUE) < ifelse(drug.use, 
+                                                         16, 23))
+
+covariates <- covariates %>%
+    mutate(aids.year=year(aids.date),
+           aids.month=month(aids.date))
+
+# cd4 closest to primary AIDS diagnosis
+cd4 <- read_csv("data/hivvert-data04.csv",
+                    col_types="iiciiididdiiiiiiiddiiiiiiiiiiiidc") %>%
+    filter(COHORT == 1, !is.na(CD4N)) %>%
+    select(STUDYID, cd4=CD4N, VDATE) %>%
+    mutate(VDATE=mdy(VDATE),
+           VDATE=as.Date(VDATE)) %>%
+    inner_join(covariates, by=c("STUDYID"="STUDYID")) %>%
+    select(STUDYID, cd4, VDATE, aids.date) %>%
+    mutate(visit.aids.diff=difftime(VDATE, aids.date)) %>%
+    group_by(STUDYID) %>%
+    filter(visit.aids.diff == min(abs(visit.aids.diff))) %>%
+    select(STUDYID, cd4)
+
+# join in cd4 at first AIDS diagnosis
+summ.visits <- visits %>%
+    left_join(cd4)
+
+# add data together
+covariates <- covariates %>%
+    inner_join(summ.visits) %>%
+    mutate(race=ifelse(race == 1, "white", "non-white"))
+```
+
+We also created a naive model that includes **all** MACS data,
+but does not adjust for any confounders, or the pre / post HAART era.
+```{r all-naive-model}
+data <- covariates %>%
+    rowwise() %>%
+    mutate(start=aids.date,
+           stop=censor.date,
+           sec.aids=sec.aids.date,
+           status=(death.date < as.Date("2100-01-01"))) %>%
+    mutate_each(funs(as.numeric), start, stop, sec.aids) %>%
+    # there are a few obs coming up where secondary and primary are 
+    # diagnosed at the same time.
+    # let's remove those.
+    filter(stop > start,
+           !is.na(sec.aids))
+
+pre.sec <- data %>%
+    rowwise() %>%
+    mutate(stop=min(stop, sec.aids),
+           sec.aids=0) %>%
+    # remove those with same date diag of first and sec aids
+    filter(start < stop)
+
+post.sec <- data %>%
+    filter(sec.aids < stop) %>%
+    mutate(start=sec.aids,
+           sec.aids=1)
+
+time.varying <- bind_rows(pre.sec, post.sec)
+
+naive.model <- coxph(Surv(start, stop, status) ~ sec.aids,
+                     data=time.varying)
+
+knitr::kable(coef(summary(naive.model)),
              caption="Naive Model")
 ```
 
-```{r strat-surv}
-# strat.model <- coxph(Surv(first.aids.date, stop, dead.at.censor) ~ 
-#                      had.sec.aids + strata(haart.era),
-#                      data=data)
+Next, we adjusted for several confounders, such as Race, Age at baseline, CD4 at baseline, year of AIDS diagnosis, and drug use.
+
+```{r all-adjusted}
+adjusted.model <- coxph(Surv(start, stop, status) ~ sec.aids +
+                        factor(race) + age.at.aids + drug.use +
+                        aids.year + depression + cd4,
+                        data=time.varying)
 ```
 
-```{r propensity-score}
-# fit logit model (and nonparam?) to calculate prop score
+```{r propensity-score, eval=FALSE}
+prop.score <- glm(sec.aids ~ confounder1 + confounder2,
+                  family=binomial,
+                  data=time.varying)
+# prop.score <- glm(sec.aids ~ status + haart.era,
+#                   family=binomial,
+#                   data=time.varying)
+
+time.varying <- time.varying %>%
+    mutate(propensity=predict(prop.score, type="response"))
 ```
 
-```{r matching}
+```{r matching, eval=FALSE}
+library(MatchIt)
+```
+
+```{r sophisticated-hazards}
+```
+
+```{r graphs}
 ```
