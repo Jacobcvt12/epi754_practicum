@@ -28,7 +28,8 @@ theme_set(theme_classic())
 We read in the data.
 ```{r data}
 # read in horiz data with lots of covariates
-covariates <- read_csv("data/macswihs_horiz2013_copy-1.csv") %>%
+covariates <- read_csv("data/macswihs_horiz2013_copy-1.csv", 
+                       progress=FALSE) %>%
            # date of death
     mutate(death.date=as.Date("1960-01-01") + FRSTDTHD,
            # date of aids diagnosis
@@ -62,7 +63,7 @@ covariates <- read_csv("data/macswihs_horiz2013_copy-1.csv") %>%
     filter(year(aids.date) < 2100)
 
 # read in visit level data
-visits <- read_csv("data/hivvert-data04.csv",
+visits <- read_csv("data/hivvert-data04.csv", progress=FALSE,
                     col_types="iiciiididdiiiiiiiddiiiiiiiiiiiidc") %>%
     # keep MACS only
     filter(COHORT==1) %>%
@@ -74,7 +75,7 @@ covariates <- covariates %>%
 ```
 
 ```{r fig1}
-visits <- read_csv("data/hivvert-data04.csv",
+visits <- read_csv("data/hivvert-data04.csv", progress=FALSE,
                     col_types="iiciiididdiiiiiiiddiiiiiiiiiiiidc") %>%
     # put visits in correct 1,2, 3,... form
     mutate(visit=VISIT / 10,
@@ -204,7 +205,7 @@ covariates <- read_csv("data/macswihs_horiz2013_copy-1.csv") %>%
 # what about propensity score?
 
 # what about therapy?
-visits <- read_csv("data/hivvert-data04.csv",
+visits <- read_csv("data/hivvert-data04.csv", progress=FALSE,
                     col_types="iiciiididdiiiiiiiddiiiiiiiiiiiidc") %>%
     # keep MACS only
     filter(COHORT == 1) %>% 
@@ -218,7 +219,7 @@ visits <- read_csv("data/hivvert-data04.csv",
     filter(!is.na(depression))
 
 # cd4 closest to primary AIDS diagnosis
-visits <- read_csv("data/hivvert-data04.csv",
+visits <- read_csv("data/hivvert-data04.csv", progress=FALSE,
                     col_types="iiciiididdiiiiiiiddiiiiiiiiiiiidc") %>%
     filter(COHORT == 1, !is.na(CD4N)) %>%
     select(STUDYID, cd4=CD4N, VDATE) %>%
@@ -288,63 +289,62 @@ knitr::kable(coef(summary(adjusted.model)),
              caption="PH Model Adjusted for Confounders")
 ```
 
-```{r propensity-score, eval=FALSE}
-prop.score <- glm(sec.aids ~ factor(race) + age.at.aids + drug.use +
-                  aids.year + depression + cd4,
-                  family=binomial,
-                  data=time.varying)
+Finally, we use propensity score matching to account for confounding bias.
 
-time.varying <- time.varying %>%
-    mutate(propensity=predict(prop.score, type="response"))
+```{r propensity-score}
+set.seed(90210)
+match.set <- MatchIt::matchit(sec.aids ~ factor(race) + 
+                              age.at.aids + drug.use +
+                              aids.year + depression + cd4,
+                              data=time.varying,
+                              distance="logit",
+                              method="nearest",
+                              caliper=.07,
+                              discard="both")
+
+# ## let's check out the diagnostics
+
+# ## numerical check
+match.check <- summary(match.set, standardize=TRUE)
+
+# ## graphical check
+plot(match.set, type="hist")
+# plot(match.set, type="jitter", interactive=FALSE)
+
+matched.dat <- MatchIt::match.data(match.set,"all")
+
+ph.match <- coxph(Surv(start, stop, status) ~ sec.aids +
+                  factor(race) + age.at.aids + drug.use +
+                  aids.year + depression + cd4,
+   				  data=matched.dat,
+                  method="efron")
 ```
 
-```{r matching, eval=FALSE}
-library(MatchIt)
-# ########################################################################
-# ## Q9c Match on propensity score and compare the propensity score 
-# ##	distribution overlap between HIV/HAART and HIV-uninfected before
-# ##	and after matching.
-# ########################################################################
-# 
-# ## We will use the package "MatchIt" to perform matches
-# ##	note: you can have the function matchit actually calculate the propensity score
-# ##		but as we've already calculated cpoe we can have matchit use our already 
-# ##		defined propensity score by the option "distance=dat$cpoe" located in the code below
-# ##	note: we chose a caliper of 0.07, by iteratively going through a search between 0 and .5
-# ##		at a 0.01 step and chose the caliper that maximized the percent balance improvement
-# ##		for distance (e.g. propensity score), age, and bmi.
-# 
-# set.seed(8771)
-# match.set <- matchit(hivhrt~age + bmi,data=dat,distance=dat$cpoe,method="nearest",caliper=.07,discard="both")
-# 
-# ## let's check out the diagnostics
-# 
-# ## numerical check
-# print(sum.match <- summary(match.set,standardize=T))
-# 
-# ## graphical check
-# plot(match.set,type="jitter",interactive=F)
-# plot(match.set,type="hist")
-# plot(sum.match,interactive=F)
-# 
-# matched.dat <- match.data(match.set,"all")
-# 
-# ## how many individuals in matched.dat?
-# nrow(matched.dat)
-# 
-# ## How many events do we have in the matched data?
-# sum(matched.dat$dm)
-# 
-# ########################################################################
-# ## Q10a Get HRs after matching
-# ########################################################################
-# 
-# ph.match <- coxph(Surv(time=t,event=dm)~hivhrt,
-# 				data=matched.dat,method="efron")
-# summary(ph.match)
-# 
-# 
-# 
+There were `r length(unique(matched.dat$STUDYID))` individuals in the 
+matched data set of the orginal `r nrow(data)`. There are 
+`r sum(matched.dat$sec.aids)` events in the matched data set.
+We perform a check on the data and see the following summaries.
+
+```{r}
+knitr::kable(match.check$sum.all,
+             caption="Summary of balance for all data")
+knitr::kable(match.check$sum.matched,
+             caption="Summary of balance for matched data")
+knitr::kable(match.check$reduction,
+             caption="Percent Balance Improvement")
+knitr::kable(match.check$nn,
+             caption="Sample Sizes")
+```
+
+In recalculating our proportional hazards model using propensity score
+in order to handle confounding bias, we see the following results.
+
+```{r}
+knitr::kable(coef(summary(ph.match)),
+             caption="PH Model (Propensity Scores)")
+```
+
+```{r}
 # ########################################################################
 # ## Q10b Get HRs after matching with higher caliper
 # ########################################################################
@@ -393,8 +393,6 @@ library(MatchIt)
 # summary(ph.sub)
 ```
 
-```{r sophisticated-hazards}
-```
-
 ```{r graphs}
+plot(survfit(ph.match))
 ```
