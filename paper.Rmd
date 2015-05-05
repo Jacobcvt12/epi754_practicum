@@ -300,6 +300,97 @@ time.varying <- time.varying %>%
 
 ```{r matching, eval=FALSE}
 library(MatchIt)
+# ########################################################################
+# ## Q9c Match on propensity score and compare the propensity score 
+# ##	distribution overlap between HIV/HAART and HIV-uninfected before
+# ##	and after matching.
+# ########################################################################
+# 
+# ## We will use the package "MatchIt" to perform matches
+# ##	note: you can have the function matchit actually calculate the propensity score
+# ##		but as we've already calculated cpoe we can have matchit use our already 
+# ##		defined propensity score by the option "distance=dat$cpoe" located in the code below
+# ##	note: we chose a caliper of 0.07, by iteratively going through a search between 0 and .5
+# ##		at a 0.01 step and chose the caliper that maximized the percent balance improvement
+# ##		for distance (e.g. propensity score), age, and bmi.
+# 
+# set.seed(8771)
+# match.set <- matchit(hivhrt~age + bmi,data=dat,distance=dat$cpoe,method="nearest",caliper=.07,discard="both")
+# 
+# ## let's check out the diagnostics
+# 
+# ## numerical check
+# print(sum.match <- summary(match.set,standardize=T))
+# 
+# ## graphical check
+# plot(match.set,type="jitter",interactive=F)
+# plot(match.set,type="hist")
+# plot(sum.match,interactive=F)
+# 
+# matched.dat <- match.data(match.set,"all")
+# 
+# ## how many individuals in matched.dat?
+# nrow(matched.dat)
+# 
+# ## How many events do we have in the matched data?
+# sum(matched.dat$dm)
+# 
+# ########################################################################
+# ## Q10a Get HRs after matching
+# ########################################################################
+# 
+# ph.match <- coxph(Surv(time=t,event=dm)~hivhrt,
+# 				data=matched.dat,method="efron")
+# summary(ph.match)
+# 
+# 
+# 
+# ########################################################################
+# ## Q10b Get HRs after matching with higher caliper
+# ########################################################################
+# 
+# 
+# set.seed(1428)
+# match2.set <- matchit(hivhrt~age + bmi,data=dat,distance=dat$cpoe,method="nearest",caliper=.5,discard="both")
+# 
+# ## let's check out the diagnostics
+# 
+# ## numerical check
+# print(sum.match2 <- summary(match2.set,standardize=T))
+# 
+# ## graphical check
+# plot(match2.set,type="jitter",interactive=F)
+# plot(sum.match2,interactive=F)
+# 
+# matched2.dat <- match.data(match2.set,"all")
+# 
+# ## how many individuals in matched.dat?
+# nrow(matched2.dat)
+# 
+# ##
+# sum(matched2.dat$dm)
+# 
+# ph.match2 <- coxph(Surv(time=t,event=dm)~hivhrt,data=matched2.dat,method="efron")
+# summary(ph.match2)
+# 
+# 
+# 
+# 
+# ########################################################################
+# ## Q10c Get HRs after subclassification
+# ########################################################################
+# 
+# 
+# dat$hivhrtn <- as.numeric(dat$hivhrt)-1
+# sub.set <- matchit(hivhrtn~age + bmi,data=dat,method="subclass",sub.by="all",subclass=5,discard="both")
+# 
+# summary(sub.set,standardize=T)
+# plot(sub.set,type="jitter",interactive=F)
+# plot(summary(sub.set,standardize=T),interactive=F)
+# 
+# sub.dat <- match.data(sub.set,"all")
+# ph.sub <- coxph(Surv(time=t,event=dm)~hivhrtn+strata(subclass),data=sub.dat,method="efron")
+# summary(ph.sub)
 ```
 
 ```{r sophisticated-hazards}
