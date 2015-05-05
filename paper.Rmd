@@ -285,13 +285,19 @@ adjusted.model <- coxph(Surv(start, stop, status) ~ sec.aids +
                         aids.year + depression + cd4,
                         data=time.varying)
 
+adjusted.model.ph <- cox.zph(adjusted.model)
+
 knitr::kable(coef(summary(adjusted.model)),
              caption="PH Model Adjusted for Confounders")
+
+knitr::kable(cox.zph(adjusted.model)$table,
+             caption="PH Assumption Test")
 ```
 
 Finally, we use propensity score matching to account for confounding bias.
 
 ```{r propensity-score}
+caliper <- 0.07
 set.seed(90210)
 match.set <- MatchIt::matchit(sec.aids ~ factor(race) + 
                               age.at.aids + drug.use +
@@ -299,7 +305,7 @@ match.set <- MatchIt::matchit(sec.aids ~ factor(race) +
                               data=time.varying,
                               distance="logit",
                               method="nearest",
-                              caliper=.07,
+                              caliper=caliper,
                               discard="both")
 
 # ## let's check out the diagnostics
@@ -323,12 +329,13 @@ ph.match <- coxph(Surv(start, stop, status) ~ sec.aids +
 There were `r length(unique(matched.dat$STUDYID))` individuals in the 
 matched data set of the orginal `r nrow(data)`. There are 
 `r sum(matched.dat$sec.aids)` events in the matched data set.
-We perform a check on the data and see the following summaries.
+We perform a check on the data and see the following summaries. We used a
+caliper of `r caliper`.
 
 ```{r}
-knitr::kable(match.check$sum.all,
+knitr::kable(match.check$sum.all[,1:4],
              caption="Summary of balance for all data")
-knitr::kable(match.check$sum.matched,
+knitr::kable(match.check$sum.matched[,1:4],
              caption="Summary of balance for matched data")
 knitr::kable(match.check$reduction,
              caption="Percent Balance Improvement")
@@ -342,57 +349,97 @@ in order to handle confounding bias, we see the following results.
 ```{r}
 knitr::kable(coef(summary(ph.match)),
              caption="PH Model (Propensity Scores)")
+
+knitr::kable(cox.zph(ph.match)$table,
+             caption="PH Assumption Test")
+caliper <- 0.5
 ```
 
-```{r}
-# ########################################################################
-# ## Q10b Get HRs after matching with higher caliper
-# ########################################################################
-# 
-# 
-# set.seed(1428)
-# match2.set <- matchit(hivhrt~age + bmi,data=dat,distance=dat$cpoe,method="nearest",caliper=.5,discard="both")
-# 
+Next, we performed the same PH model using propensity scores, but with a higher
+caliper (`r caliper`).
+
+```{r propensity-score-2}
+set.seed(90210)
+match.set <- MatchIt::matchit(sec.aids ~ factor(race) + 
+                              age.at.aids + drug.use +
+                              aids.year + depression + cd4,
+                              data=time.varying,
+                              distance="logit",
+                              method="nearest",
+                              caliper=caliper,
+                              discard="both")
+
 # ## let's check out the diagnostics
-# 
+
 # ## numerical check
-# print(sum.match2 <- summary(match2.set,standardize=T))
-# 
+match.check <- summary(match.set, standardize=TRUE)
+
 # ## graphical check
-# plot(match2.set,type="jitter",interactive=F)
-# plot(sum.match2,interactive=F)
-# 
-# matched2.dat <- match.data(match2.set,"all")
-# 
-# ## how many individuals in matched.dat?
-# nrow(matched2.dat)
-# 
-# ##
-# sum(matched2.dat$dm)
-# 
-# ph.match2 <- coxph(Surv(time=t,event=dm)~hivhrt,data=matched2.dat,method="efron")
-# summary(ph.match2)
-# 
-# 
-# 
-# 
-# ########################################################################
-# ## Q10c Get HRs after subclassification
-# ########################################################################
-# 
-# 
-# dat$hivhrtn <- as.numeric(dat$hivhrt)-1
-# sub.set <- matchit(hivhrtn~age + bmi,data=dat,method="subclass",sub.by="all",subclass=5,discard="both")
-# 
+plot(match.set, type="hist")
+# plot(match.set, type="jitter", interactive=FALSE)
+
+matched.dat <- MatchIt::match.data(match.set,"all")
+
+ph.match <- coxph(Surv(start, stop, status) ~ sec.aids +
+                  factor(race) + age.at.aids + drug.use +
+                  aids.year + depression + cd4,
+   				  data=matched.dat,
+                  method="efron")
+```
+
+There were `r length(unique(matched.dat$STUDYID))` individuals in the 
+new matched data set of the orginal `r nrow(data)`. There are 
+`r sum(matched.dat$sec.aids)` events in the matched data set.
+We perform a check on the data and see the following summaries. 
+
+```{r}
+knitr::kable(match.check$sum.all[,1:4],
+             caption="Summary of balance for all data")
+knitr::kable(match.check$sum.matched[,1:4],
+             caption="Summary of balance for matched data")
+knitr::kable(match.check$reduction,
+             caption="Percent Balance Improvement")
+knitr::kable(match.check$nn,
+             caption="Sample Sizes")
+```
+
+In our second PH model with propensity scores, we see the following results.
+
+```{r}
+knitr::kable(coef(summary(ph.match)),
+             caption="PH Model (Propensity Scores)")
+
+knitr::kable(cox.zph(ph.match)$table,
+             caption="PH Assumption Test")
+caliper <- 0.5
+```
+
+Finally, we used a subclassification method for our propensity score.
+
+```{r subclass}
+sub.set <- MatchIt::matchit(sec.aids ~ factor(race) + 
+                            age.at.aids + drug.use +
+                            aids.year + depression + cd4,
+                            data=time.varying,
+                            method="subclass",
+                            sub.by="all",
+                            subclass=5)
+
 # summary(sub.set,standardize=T)
-# plot(sub.set,type="jitter",interactive=F)
+plot(sub.set,type="jitter",interactive=F)
 # plot(summary(sub.set,standardize=T),interactive=F)
-# 
-# sub.dat <- match.data(sub.set,"all")
-# ph.sub <- coxph(Surv(time=t,event=dm)~hivhrtn+strata(subclass),data=sub.dat,method="efron")
-# summary(ph.sub)
+
+sub.dat <- MatchIt::match.data(sub.set, "all")
+ph.match <- coxph(Surv(start, stop, status) ~ sec.aids + strata(subclass),
+   				  data=sub.dat,
+                  method="efron")
+knitr::kable(coef(summary(ph.match)),
+             caption="PH Model (Propensity Scores)")
+
+knitr::kable(cox.zph(ph.match)$table,
+             caption="PH Assumption Test")
 ```
 
 ```{r graphs}
-plot(survfit(ph.match))
+plot(survfit(ph.match), main="Final PH Model Using Subclassification")
 ```
