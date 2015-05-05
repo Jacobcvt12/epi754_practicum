@@ -195,7 +195,10 @@ covariates <- read_csv("data/macswihs_horiz2013_copy-1.csv") %>%
            race=RACE,
            age.at.aids) %>%
     filter(year(aids.date) < 2100) %>%
-    mutate(haart.era=(year(aids.date) > 1993))
+    mutate(haart.era=(year(aids.date) > 1993),
+           aids.year=year(aids.date),
+           aids.month=month(aids.date),
+           race=ifelse(race == 1, "white", "non-white"))
 
 # what are the important confoudners that we can include for the PH model?
 # what about propensity score?
@@ -209,14 +212,13 @@ visits <- read_csv("data/hivvert-data04.csv",
     summarise(drug.use=sum(POTUSE, CRACKUSE, COCUSE, HERUSE, AMPHUSE, 
                            POPUSE, na.rm=TRUE) > 1,
               depression=mean(CESD, na.rm=TRUE) < ifelse(drug.use, 
-                                                         16, 23))
-
-covariates <- covariates %>%
-    mutate(aids.year=year(aids.date),
-           aids.month=month(aids.date))
+                                                         16, 23)) %>%
+    ungroup() %>%
+    # remove the 8 missing depression status
+    filter(!is.na(depression))
 
 # cd4 closest to primary AIDS diagnosis
-cd4 <- read_csv("data/hivvert-data04.csv",
+visits <- read_csv("data/hivvert-data04.csv",
                     col_types="iiciiididdiiiiiiiddiiiiiiiiiiiidc") %>%
     filter(COHORT == 1, !is.na(CD4N)) %>%
     select(STUDYID, cd4=CD4N, VDATE) %>%
@@ -226,21 +228,19 @@ cd4 <- read_csv("data/hivvert-data04.csv",
     select(STUDYID, cd4, VDATE, aids.date) %>%
     mutate(visit.aids.diff=difftime(VDATE, aids.date)) %>%
     group_by(STUDYID) %>%
-    filter(visit.aids.diff == min(abs(visit.aids.diff))) %>%
-    select(STUDYID, cd4)
-
-# join in cd4 at first AIDS diagnosis
-summ.visits <- visits %>%
-    left_join(cd4)
+    filter(abs(visit.aids.diff) == min(abs(visit.aids.diff))) %>%
+    select(STUDYID, cd4) %>%
+    ungroup() %>%
+    right_join(visits)
 
 # add data together
 covariates <- covariates %>%
-    inner_join(summ.visits) %>%
-    mutate(race=ifelse(race == 1, "white", "non-white"))
+    inner_join(visits) 
 ```
 
 We also created a naive model that includes **all** MACS data,
 but does not adjust for any confounders, or the pre / post HAART era.
+
 ```{r all-naive-model}
 data <- covariates %>%
     rowwise() %>%
@@ -276,22 +276,23 @@ knitr::kable(coef(summary(naive.model)),
              caption="Naive Model")
 ```
 
-Next, we adjusted for several confounders, such as Race, Age at baseline, CD4 at baseline, year of AIDS diagnosis, and drug use.
+Next, we adjusted for several confounders, such as Race, Age at baseline, CD4 at AIDS diagnosis, year of AIDS diagnosis, and drug use.
 
 ```{r all-adjusted}
 adjusted.model <- coxph(Surv(start, stop, status) ~ sec.aids +
                         factor(race) + age.at.aids + drug.use +
                         aids.year + depression + cd4,
                         data=time.varying)
+
+knitr::kable(coef(summary(adjusted.model)),
+             caption="PH Model Adjusted for Confounders")
 ```
 
 ```{r propensity-score, eval=FALSE}
-prop.score <- glm(sec.aids ~ confounder1 + confounder2,
+prop.score <- glm(sec.aids ~ factor(race) + age.at.aids + drug.use +
+                  aids.year + depression + cd4,
                   family=binomial,
                   data=time.varying)
-# prop.score <- glm(sec.aids ~ status + haart.era,
-#                   family=binomial,
-#                   data=time.varying)
 
 time.varying <- time.varying %>%
     mutate(propensity=predict(prop.score, type="response"))
