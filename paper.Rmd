@@ -204,16 +204,21 @@ covariates <- read_csv("data/macswihs_horiz2013_copy-1.csv") %>%
 # what are the important confoudners that we can include for the PH model?
 # what about propensity score?
 
+data %>%
+    filter(year(death.date) < 2100) %>%
+    mutate(time.to.death=difftime(death.date, aids.date, units="weeks") / 4) %>%
+    group_by(frst.aids.diag) %>%
+    summarise(cases=n(),
+              med.to.death=median(time.to.death))
+
 # what about therapy?
 visits <- read_csv("data/hivvert-data04.csv", progress=FALSE,
-                    col_types="iiciiididdiiiiiiiddiiiiiiiiiiiidc") %>%
+                    col_types="iiciiididdiiiiiiiddiiiiiiiiiiiidc") %>% 
     # keep MACS only
     filter(COHORT == 1) %>% 
     group_by(STUDYID) %>%
-    summarise(drug.use=sum(POTUSE, CRACKUSE, COCUSE, HERUSE, AMPHUSE, 
-                           POPUSE, na.rm=TRUE) > 1,
-              depression=mean(CESD, na.rm=TRUE) < ifelse(drug.use, 
-                                                         16, 23)) %>%
+    summarise(drug.use=sum(CRACKUSE, COCUSE, HERUSE, AMPHUSE, na.rm=TRUE) > 1,
+              depression=mean(CESD, na.rm=TRUE) < 23) %>%
     ungroup() %>%
     # remove the 8 missing depression status
     filter(!is.na(depression))
@@ -443,3 +448,24 @@ knitr::kable(cox.zph(ph.match)$table,
 ```{r graphs}
 plot(survfit(ph.match), main="Final PH Model Using Subclassification")
 ```
+
+Keri's recommendations:
+    1. Origin being primary diagnosis is fine
+    2. person time since prim diag is fine
+    3. be careful w/ term time varying exposure
+    4. covarites: race is fine, age is fine, remove marijauan and poppers from drug
+    5. depression use 23 period.
+    6. should depression be mean?
+    7. CD4 is great
+    8. year of aids diagnosis? restrict to 1996. Censor study at 1996. could
+       categorize year (<90, 90-93, 93-Jul 95, >Jul 95)
+    9. put people back in that had sec aids at baseline.
+    10. timing of secondary aids diagnosis? distribution of prim aids to sec. aids
+        infection?
+    11. sens. look at dist of survival by type. pick a cutoff that we think is
+        meaningful. type of primary. i.e. higher median survival, lower median
+        survival.
+    12. switch propensity scores to ipw
+    13. combinations of prim and sec aids impact. could explore with
+        interaction.
+    14. Add site
