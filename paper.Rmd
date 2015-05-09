@@ -2,10 +2,10 @@
 title:  "The Effect of a Second AIDS Defining Illness on Survival in the MACS"
 author: 
 - "[Jacob Carey](mailto:jcare15@jhu.edu)"
-- "[Matt Murrill](mmurril1@jhmi.edu)"
-- "[Kim Kunwha](khkim@jhu.edu)"
+- "[Matt Murrill](mailto:mmurril1@jhmi.edu)"
+- "[Kim Kunwha](mailto:khkim@jhu.edu)"
 date:   "`r Sys.Date()`"
-output: pdf_document
+output: word_document
 abstract: |
   We seek to investigate the effect of a second AIDS defining illness on survival. We included people who are seroprevalent as well as seroconverters. We addressed confounding using propensity scores.
 ---
@@ -19,209 +19,127 @@ knitr::opts_chunk$set(echo=FALSE,
 ```{r libs}
 library(readr)
 library(dplyr)
+library(tidyr)
 library(ggplot2)
 library(lubridate)
 library(survival)
 theme_set(theme_classic())
 ```
 
-We read in the data.
-```{r data}
-# read in horiz data with lots of covariates
-covariates <- read_csv("data/macswihs_horiz2013_copy-1.csv", 
-                       progress=FALSE) %>%
-           # date of death
-    mutate(death.date=as.Date("1960-01-01") + FRSTDTHD,
-           # date of aids diagnosis
-           aids.date=as.Date("1960-01-01") + FRSTAIDD,
-           # date of secondary aids diagnosis
-           sec.aids.date=as.Date("1960-01-01") + SECAIDD,
-           # what was the first aids diagnosis
-           frst.aids.diag=AIDSDIAG,
-           # what was the second aids diagnosis
-           sec.aids.diag=SECAIDSDIAG,
-           # did the person have a sec aids diag
-           had.sec=year(sec.aids.date) < 2100,
-           # did the person die
-           died=year(death.date) < 2100,
-           age=as.Date("1960-01-01") + DOB,
-           exit=ifelse(!died, as.Date("1994-12-31"), death.date),
-           censor.date=as.Date("1970-01-01") + as.integer(exit),
-           last.alive=as.Date("1960-01-01") + LASTALID,
-           censor.date=ifelse(last.alive < censor.date, last.alive, 
-                              censor.date),
-           censor.date=as.Date("1970-01-01")+censor.date,
-           dead.at.censor=(death.date < as.Date("1994-12-31"))) %>%
-    select(STUDYID, 
-           aids.date,
-           sec.aids.date,
-           frst.aids.diag, 
-           censor.date, 
-           sec.aids.diag,
-           dead.at.censor, 
-           death.date) %>%
-    filter(year(aids.date) < 2100)
-
-# read in visit level data
-visits <- read_csv("data/hivvert-data04.csv", progress=FALSE,
-                    col_types="iiciiididdiiiiiiiddiiiiiiiiiiiidc") %>%
-    # keep MACS only
-    filter(COHORT==1) %>%
-    select(STUDYID) %>%
-    distinct(STUDYID)
-
-covariates <- covariates %>%
-    inner_join(visits)
-```
-
-```{r fig1}
-visits <- read_csv("data/hivvert-data04.csv", progress=FALSE,
-                    col_types="iiciiididdiiiiiiiddiiiiiiiiiiiidc") %>%
-    # put visits in correct 1,2, 3,... form
-    mutate(visit=VISIT / 10,
-           visit.date=mdy(VDATE),
-           haart.era.visit=year(visit.date) <= 1994) %>%
-    
-    # join to covariates
-    left_join(covariates, by=c("STUDYID")) %>%
-
-    # keep MACS only
-    filter(COHORT==1,
-           # keep people with first ADI only
-           frst.aids.diag != 0,
-           # restrict to haart era visits right now
-           haart.era.visit == TRUE) %>%
-    select(id=STUDYID, center=CENTER, visit:dead.at.censor)
-
-# only for pre haart!
-# need to do again for all data
-data.plot <- visits %>%
-    group_by(id) %>%
-    summarise(sec.aids=min(sec.aids.diag)) %>%
-    mutate(sec.aids=plyr::revalue(as.character(sec.aids),
-                                  c("0"="No Aids",
-                                    "1"="PCP",
-                                    "2"="KS",
-                                    "3"="NHL",
-                                    "4"="Neuro",
-                                    "5"="Bacteria OI",
-                                    "6"="Fungal OI",
-                                    "7"="Protozoa",
-                                    "8"="CMV/HSV",
-                                    "9"="Wasting",
-                                    "10"="Recurrent PNA",
-                                    "11"="Cervical Ca"),
-                                  warn_missing=FALSE))
-ggplot(data.plot, aes(x=sec.aids)) + 
-    geom_histogram() +
-    xlab("Type of Secondary Aids Diagnosis") +
-    ylab("Count") +
-    ggtitle("Figure 1") +
-    scale_x_discrete(limits=names(sort(-table(data.plot$sec.aids)))) +
-    theme(axis.text.x = element_text(angle=-90))
-```
-
-We fit a Cox proportional hazards model to the pre haart era data. We allowed secondary aids diagnosis to be time varying. 
-```{r naive-survival}
-# http://cran.r-project.org/web/packages/survival/vignettes/timedep.pdf
-# https://stat.ethz.ch/R-manual/R-devel/library/survival/html/coxph.html
-data <- covariates %>%
-    filter(year(aids.date) <= 1994) %>%
-    rowwise() %>%
-    transmute(start=aids.date,
-              stop=min(censor.date, as.Date("1994-12-31")),
-              sec.aids=sec.aids.date,
-              status=(death.date <= as.Date("1994-12-31"))) %>%
-    mutate_each(funs(as.numeric), start, stop, sec.aids) %>%
-    # there are a few obs coming up where secondary and primary are 
-    # diagnosed at the same time.
-    # let's remove those.
-    filter(stop > start,
-           !is.na(sec.aids))
-
-pre.sec <- data %>%
-    rowwise() %>%
-    mutate(stop=min(stop, sec.aids),
-           sec.aids=0) %>%
-    # remove those with same date diag of first and sec aids
-    filter(start < stop)
-
-post.sec <- data %>%
-    filter(sec.aids < stop) %>%
-    mutate(start=sec.aids,
-           sec.aids=1)
-
-time.varying <- bind_rows(pre.sec, post.sec)
-
-naive.model <- coxph(Surv(start, stop, status) ~ sec.aids,
-                     data=time.varying)
-
-knitr::kable(coef(summary(naive.model)),
-             caption="Naive Model (All Data)")
-```
-
 ```{r all-data}
+# bins for 2nd ADI
+# PCP, KS, CMV, NHL, neuro, other
+map <- c("0"="No Aids",
+         "1"="PCP",
+         "2"="KS",
+         "3"="NHL",
+         "4"="Neuro",
+         "5"="Other",
+         "6"="Other",
+         "7"="Other",
+         "8"="CMV/HSV",
+         "9"="Other",
+         "10"="Other",
+         "11"="Other")
+
+map.2 <- c("1"="Baltimore",
+           "2"="Chicago",
+           "3"="Pittsburgh",
+           "4"="Los Angeles")
+
 # read in horiz data with lots of covariates
 covariates <- read_csv("data/macswihs_horiz2013_copy-1.csv") %>%
            # date of death
     mutate(death.date=as.Date("1960-01-01") + FRSTDTHD,
            # date of aids diagnosis
            aids.date=as.Date("1960-01-01") + FRSTAIDD,
+           # aids interval
+           aids.interval=ifelse(year(aids.date) < 1990, "[84, 90)", 
+                         ifelse(year(aids.date) < 1993, "[90, 93)",
+                         ifelse(aids.date < as.Date("1995-07-01"), 
+                                "[93, 07-95)",
+                                "[07-95, 96)"))),
            # date of secondary aids diagnosis
            sec.aids.date=as.Date("1960-01-01") + SECAIDD,
+           # sec aids interval
+           seca.interval=ifelse(year(sec.aids.date) < 1990, "[84, 90)", 
+                         ifelse(year(sec.aids.date) < 1993, "[90, 93)",
+                         ifelse(sec.aids.date < as.Date("1995-07-01"), 
+                                "[93, 07-95)",
+                                "[07-95, 96)"))),
            # what was the first aids diagnosis
-           frst.aids.diag=AIDSDIAG,
-           # what was the second aids diagnosis
-           sec.aids.diag=SECAIDSDIAG,
+           frst.aids.diag=plyr::revalue(as.character(AIDSDIAG), map, 
+                                        warn_missing=FALSE),
+           # what was the first aids diagnosis
+           sec.aids.diag=plyr::revalue(as.character(SECAIDSDIAG), map, 
+                                       warn_missing=FALSE),
            # did the person have a sec aids diag
-           had.sec=year(sec.aids.date) < 2100,
-           # did the person die
-           died=year(death.date) < 2100,
+           had.sec=year(sec.aids.date) < 1996,
            dob=as.Date("1960-01-01") + DOB,
            age.at.aids=difftime(aids.date, dob, unit="weeks") / 52.25,
-           age.at.aids=as.numeric(age.at.aids),
-           exit=death.date,
-           censor.date=as.Date("1970-01-01") + as.integer(exit),
-           last.alive=as.Date("1960-01-01") + LASTALID,
-           censor.date=ifelse(last.alive < censor.date, last.alive, 
-                              censor.date),
-           censor.date=as.Date("1970-01-01")+censor.date) %>%
+           age.at.aids=as.numeric(age.at.aids)) %>%
     select(STUDYID, 
            aids.date,
+           aids.interval,
            sec.aids.date,
+           seca.interval,
+           had.sec,
            frst.aids.diag, 
-           censor.date, 
            sec.aids.diag,
            death.date,
            race=RACE,
            age.at.aids) %>%
-    filter(year(aids.date) < 2100) %>%
-    mutate(haart.era=(year(aids.date) > 1993),
-           aids.year=year(aids.date),
+    # only keep pts who developed aids before 1996
+    filter(year(aids.date) < 1996) %>%
+    mutate(aids.year=year(aids.date),
            aids.month=month(aids.date),
-           race=ifelse(race == 1, "white", "non-white"))
+           race=ifelse(race == 1, "white", "non-white")) %>%
+    rowwise() %>%
+    mutate(sec.aids.date=min(sec.aids.date, 
+                             as.Date("1995-12-31"))) %>%
+    ungroup() %>%
+    mutate(sec.aids.date=ifelse(had.sec, sec.aids.date, 
+                                as.Date("2100-01-01")),
+           sec.aids.date=as.Date(sec.aids.date, "1970-01-01"),
+           death.date=ifelse(year(death.date) >= 1996,
+                             as.Date("2100-01-01"),
+                             death.date),
+           death.date=as.Date(death.date, "1970-01-01")) %>%
+    rowwise() %>%
+    mutate(censor.date=min(death.date, as.Date("1995-12-31")),
+           censor.date=as.Date(censor.date, "1970-01-01")) %>%
+    ungroup() %>%
+    tbl_df()
 
-# what are the important confoudners that we can include for the PH model?
-# what about propensity score?
+# get CENTER
+visits <- read_csv("data/hivvert-data04.csv", progress=FALSE,
+                    col_types="iiciiididdiiiiiiiddiiiiiiiiiiiidc") %>%
+    filter(COHORT == 1) %>%
+    count(STUDYID, CENTER) %>%
+    group_by(STUDYID) %>%
+    # just consider the most visited center
+    filter(n==max(n)) %>%
+    # there are a few ties so let's just pick the first one
+    distinct(STUDYID) %>%
+    # forget n
+    select(-n) %>%
+    mutate(CENTER=plyr::revalue(as.character(CENTER), 
+                                map.2, warn_missing=FALSE))
 
-data %>%
-    filter(year(death.date) < 2100) %>%
-    mutate(time.to.death=difftime(death.date, aids.date, units="weeks") / 4) %>%
-    group_by(frst.aids.diag) %>%
-    summarise(cases=n(),
-              med.to.death=median(time.to.death))
-
-# what about therapy?
+# get drug use and depression status
 visits <- read_csv("data/hivvert-data04.csv", progress=FALSE,
                     col_types="iiciiididdiiiiiiiddiiiiiiiiiiiidc") %>% 
     # keep MACS only
     filter(COHORT == 1) %>% 
     group_by(STUDYID) %>%
-    summarise(drug.use=sum(CRACKUSE, COCUSE, HERUSE, AMPHUSE, na.rm=TRUE) > 1,
-              depression=mean(CESD, na.rm=TRUE) < 23) %>%
+    summarise(drug.use=sum(CRACKUSE, COCUSE, HERUSE, 
+                           AMPHUSE, na.rm=TRUE) > 1,
+              depression=mean(CESD, na.rm=TRUE) > 16) %>%
     ungroup() %>%
     # remove the 8 missing depression status
-    filter(!is.na(depression))
+    filter(!is.na(depression)) %>%
+    # join in center
+    left_join(visits)
 
 # cd4 closest to primary AIDS diagnosis
 visits <- read_csv("data/hivvert-data04.csv", progress=FALSE,
@@ -241,11 +159,83 @@ visits <- read_csv("data/hivvert-data04.csv", progress=FALSE,
 
 # add data together
 covariates <- covariates %>%
-    inner_join(visits) 
+    inner_join(visits) %>%
+    filter(!is.na(cd4))
 ```
 
-We also created a naive model that includes **all** MACS data,
-but does not adjust for any confounders, or the pre / post HAART era.
+```{r graphs-explr}
+data.plot <- covariates %>%
+    mutate(adi=plyr::revalue(as.character(frst.aids.diag),
+                             map, warn_missing=FALSE),
+           sec.adi=plyr::revalue(as.character(sec.aids.diag),
+                                 map, warn_missing=FALSE)) %>%
+    select(adi,
+           sec.adi,
+           aids.date,
+           sec.aids.date,
+           death.date)
+
+ggplot(data.plot, aes(x=adi)) + 
+    geom_histogram() +
+    xlab("Type of Primary Aids Diagnosis") +
+    ylab("Count") +
+    ggtitle("Distibution of Primary ADI's") +
+    scale_x_discrete(limits=names(sort(-table(data.plot$adi)))) +
+    theme(axis.text.x = element_text(angle=-90))
+```
+
+\newpage
+
+red line is mean.
+
+```{r graphs-2}
+data.plot.1 <- data.plot %>%
+    filter(year(death.date) < 2100) %>%
+    mutate(time.to.death=difftime(death.date, aids.date, units="weeks"),
+           time.to.death=as.numeric(time.to.death) / 52.25)
+
+vline <- data.plot.1 %>%
+    group_by(adi) %>%
+    summarise(mean.time=mean(time.to.death),
+              count=n())
+
+ggplot(data.plot.1, aes(x=time.to.death)) +
+    geom_density() +
+    geom_vline(data=vline,
+               aes(xintercept=mean.time),
+               colour="red",
+               linetype="dashed") +
+    xlab("Years from AIDS Diagnosis to Death") +
+    ggtitle("Distribution of Deadliness of ADI") +
+    facet_wrap(~adi)
+
+data.plot.2 <- data.plot %>%
+    filter(year(death.date) < 2100,
+           year(sec.aids.date) < 2100) %>%
+    mutate(time.to.death=difftime(death.date, sec.aids.date, units="weeks"),
+           time.to.death=as.numeric(time.to.death) / 52.25)
+
+vline <- data.plot.2 %>%
+    group_by(sec.adi) %>%
+    summarise(mean.time=mean(time.to.death),
+              count=n())
+
+ggplot(data.plot.2, aes(x=time.to.death)) +
+    geom_density() +
+    geom_vline(data=vline,
+               aes(xintercept=mean.time),
+               colour="red",
+               linetype="dashed") +
+    xlab("Years from Second AIDS Diagnosis to Death") +
+    ggtitle("Distribution of Deadliness of Secondary ADI") +
+    facet_wrap(~sec.adi)
+```
+
+\newpage
+
+We created a naive model that includes incident and prevalent cases
+diagnoses before 1996 and administratively censored them at 1996.
+We did not adjust for any confounders.
 
 ```{r all-naive-model}
 data <- covariates %>%
@@ -255,18 +245,18 @@ data <- covariates %>%
            sec.aids=sec.aids.date,
            status=(death.date < as.Date("2100-01-01"))) %>%
     mutate_each(funs(as.numeric), start, stop, sec.aids) %>%
-    # there are a few obs coming up where secondary and primary are 
-    # diagnosed at the same time.
-    # let's remove those.
-    filter(stop > start,
-           !is.na(sec.aids))
+    # remove those with NA for sec aids date
+    # and those with aids diag and death on same day
+    filter(!is.na(sec.aids),
+           aids.date != death.date)
 
 pre.sec <- data %>%
     rowwise() %>%
     mutate(stop=min(stop, sec.aids),
            sec.aids=0) %>%
-    # remove those with same date diag of first and sec aids
-    filter(start < stop)
+    # remove those with sec aids == start aids
+    # well put them in post sec
+    filter(stop > start)
 
 post.sec <- data %>%
     filter(sec.aids < stop) %>%
@@ -282,12 +272,15 @@ knitr::kable(coef(summary(naive.model)),
              caption="Naive Model")
 ```
 
+\newpage 
+
 Next, we adjusted for several confounders, such as Race, Age at baseline, CD4 at AIDS diagnosis, year of AIDS diagnosis, and drug use.
 
 ```{r all-adjusted}
 adjusted.model <- coxph(Surv(start, stop, status) ~ sec.aids +
                         factor(race) + age.at.aids + drug.use +
-                        aids.year + depression + cd4,
+                        depression + cd4 + 
+                        factor(CENTER) + aids.interval,
                         data=time.varying)
 
 adjusted.model.ph <- cox.zph(adjusted.model)
@@ -299,173 +292,134 @@ knitr::kable(cox.zph(adjusted.model)$table,
              caption="PH Assumption Test")
 ```
 
-Finally, we use propensity score matching to account for confounding bias.
+\newpage
 
-```{r propensity-score}
-caliper <- 0.07
-set.seed(90210)
-match.set <- MatchIt::matchit(sec.aids ~ factor(race) + 
-                              age.at.aids + drug.use +
-                              aids.year + depression + cd4,
-                              data=time.varying,
-                              distance="logit",
-                              method="nearest",
-                              caliper=caliper,
-                              discard="both")
+Finally, we use an IPW approach to adjust for confounding bias.
 
-# ## let's check out the diagnostics
+```{r ipw}
+cpoe.model <- glm(sec.aids ~ factor(race) + age.at.aids +
+                  drug.use + depression + cd4 + 
+                  factor(CENTER) + aids.interval, 
+                  data=time.varying,
+                  family=binomial)
 
-# ## numerical check
-match.check <- summary(match.set, standardize=TRUE)
+mpoe.model <- glm(sec.aids ~ 1, data=time.varying, family=binomial)
 
-# ## graphical check
-plot(match.set, type="hist")
-# plot(match.set, type="jitter", interactive=FALSE)
+time.varying <- time.varying %>%
+    mutate(sec.aids=as.integer(sec.aids),
+           cpoe=fitted(cpoe.model),
+           mpoe=fitted(mpoe.model),
+           w=ifelse(sec.aids == 1, 1 / cpoe, 1 / (1 - cpoe)),
+           sw=ifelse(sec.aids == 1, mpoe / cpoe, (1 - mpoe) / (1 - cpoe)))
 
-matched.dat <- MatchIt::match.data(match.set,"all")
+data.graph <- time.varying %>%
+    select(w:sw) %>%
+    gather(weight, value, w:sw)
 
-ph.match <- coxph(Surv(start, stop, status) ~ sec.aids +
-                  factor(race) + age.at.aids + drug.use +
-                  aids.year + depression + cd4,
-   				  data=matched.dat,
-                  method="efron")
-```
+ggplot(data.graph, aes(x=value)) +
+    geom_density() +
+    xlab("Weight") +
+    ylab("") +
+    ggtitle("Distribution of weights") +
+    facet_wrap(~weight)
 
-There were `r length(unique(matched.dat$STUDYID))` individuals in the 
-matched data set of the orginal `r nrow(data)`. There are 
-`r sum(matched.dat$sec.aids)` events in the matched data set.
-We perform a check on the data and see the following summaries. We used a
-caliper of `r caliper`.
+ggplot(time.varying, aes(x=factor(sec.aids), y=log(sw))) +
+    geom_boxplot() +
+    xlab("Secondary AIDS Event") +
+    ylab("Log(SW)") +
+    ggtitle("Spread of Log SW by Secondary AIDS Event")
 
-```{r}
-knitr::kable(match.check$sum.all[,1:4],
-             caption="Summary of balance for all data")
-knitr::kable(match.check$sum.matched[,1:4],
-             caption="Summary of balance for matched data")
-knitr::kable(match.check$reduction,
-             caption="Percent Balance Improvement")
-knitr::kable(match.check$nn,
-             caption="Sample Sizes")
-```
+ph.sw <- coxph(Surv(start, stop, status) ~ sec.aids + cluster(STUDYID),
+               data=time.varying,
+               weights=sw ,
+               method="efron")
 
-In recalculating our proportional hazards model using propensity score
-in order to handle confounding bias, we see the following results.
+knitr::kable(coef(summary(ph.sw)),
+             caption="PH Model Weighted by SW")
 
-```{r}
-knitr::kable(coef(summary(ph.match)),
-             caption="PH Model (Propensity Scores)")
-
-knitr::kable(cox.zph(ph.match)$table,
-             caption="PH Assumption Test")
-caliper <- 0.5
-```
-
-Next, we performed the same PH model using propensity scores, but with a higher
-caliper (`r caliper`).
-
-```{r propensity-score-2}
-set.seed(90210)
-match.set <- MatchIt::matchit(sec.aids ~ factor(race) + 
-                              age.at.aids + drug.use +
-                              aids.year + depression + cd4,
-                              data=time.varying,
-                              distance="logit",
-                              method="nearest",
-                              caliper=caliper,
-                              discard="both")
-
-# ## let's check out the diagnostics
-
-# ## numerical check
-match.check <- summary(match.set, standardize=TRUE)
-
-# ## graphical check
-plot(match.set, type="hist")
-# plot(match.set, type="jitter", interactive=FALSE)
-
-matched.dat <- MatchIt::match.data(match.set,"all")
-
-ph.match <- coxph(Surv(start, stop, status) ~ sec.aids +
-                  factor(race) + age.at.aids + drug.use +
-                  aids.year + depression + cd4,
-   				  data=matched.dat,
-                  method="efron")
-```
-
-There were `r length(unique(matched.dat$STUDYID))` individuals in the 
-new matched data set of the orginal `r nrow(data)`. There are 
-`r sum(matched.dat$sec.aids)` events in the matched data set.
-We perform a check on the data and see the following summaries. 
-
-```{r}
-knitr::kable(match.check$sum.all[,1:4],
-             caption="Summary of balance for all data")
-knitr::kable(match.check$sum.matched[,1:4],
-             caption="Summary of balance for matched data")
-knitr::kable(match.check$reduction,
-             caption="Percent Balance Improvement")
-knitr::kable(match.check$nn,
-             caption="Sample Sizes")
-```
-
-In our second PH model with propensity scores, we see the following results.
-
-```{r}
-knitr::kable(coef(summary(ph.match)),
-             caption="PH Model (Propensity Scores)")
-
-knitr::kable(cox.zph(ph.match)$table,
-             caption="PH Assumption Test")
-caliper <- 0.5
-```
-
-Finally, we used a subclassification method for our propensity score.
-
-```{r subclass}
-sub.set <- MatchIt::matchit(sec.aids ~ factor(race) + 
-                            age.at.aids + drug.use +
-                            aids.year + depression + cd4,
-                            data=time.varying,
-                            method="subclass",
-                            sub.by="all",
-                            subclass=5)
-
-# summary(sub.set,standardize=T)
-plot(sub.set,type="jitter",interactive=F)
-# plot(summary(sub.set,standardize=T),interactive=F)
-
-sub.dat <- MatchIt::match.data(sub.set, "all")
-ph.match <- coxph(Surv(start, stop, status) ~ sec.aids + strata(subclass),
-   				  data=sub.dat,
-                  method="efron")
-knitr::kable(coef(summary(ph.match)),
-             caption="PH Model (Propensity Scores)")
-
-knitr::kable(cox.zph(ph.match)$table,
+knitr::kable(cox.zph(ph.sw)$table,
              caption="PH Assumption Test")
 ```
 
-```{r graphs}
-plot(survfit(ph.match), main="Final PH Model Using Subclassification")
+```{r graphs-final}
+# plot(survfit(ph.sw), main="Final PH Model Using IPW")
 ```
 
-Keri's recommendations:
-    1. Origin being primary diagnosis is fine
-    2. person time since prim diag is fine
-    3. be careful w/ term time varying exposure
-    4. covarites: race is fine, age is fine, remove marijauan and poppers from drug
-    5. depression use 23 period.
-    6. should depression be mean?
-    7. CD4 is great
-    8. year of aids diagnosis? restrict to 1996. Censor study at 1996. could
-       categorize year (<90, 90-93, 93-Jul 95, >Jul 95)
-    9. put people back in that had sec aids at baseline.
-    10. timing of secondary aids diagnosis? distribution of prim aids to sec. aids
-        infection?
-    11. sens. look at dist of survival by type. pick a cutoff that we think is
-        meaningful. type of primary. i.e. higher median survival, lower median
-        survival.
-    12. switch propensity scores to ipw
-    13. combinations of prim and sec aids impact. could explore with
-        interaction.
-    14. Add site
+Survival in months.
+```{r table1}
+tbl.func <- function(data, col) {
+    row.data <- data %>%
+        group_by_(col) %>%
+        summarise(col=col,
+                  n=n(),
+                  deaths=sum(died),
+                  death.pct=mean(died),
+                  surv.25=quantile(survival.time, 0.25, na.rm=TRUE),
+                  surv.med=quantile(survival.time, 0.5, na.rm=TRUE),
+                  surv.75=quantile(survival.time, 0.75, na.rm=TRUE))
+
+    names(row.data)[1] <- "characteristic"
+
+    return(row.data)
+}
+
+tbl.pre <- data %>%
+    transmute(site=CENTER,
+              race=race,
+              age.ge.40=ifelse(age.at.aids >= 40,
+                               "age >= 40", "age < 40"),
+              aids.year=cut(year(aids.date), c(1984, 1988, 1992, 1995), 
+                                 include.lowest=TRUE),
+              cd4.base=cut(cd4, c(0, 50, 200, Inf), include.lowest=TRUE),
+              initial.aids=frst.aids.diag,
+              second.aids=sec.aids.diag,
+              depressed=ifelse(depression, "depressed", "not depressed"),
+              drug.user=ifelse(drug.use, "Drug User", "Not a Drug User"),
+              site=CENTER,
+              died=year(death.date) < 2100,
+              survival.time=difftime(death.date, aids.date, 
+                                     units="weeks") / 52.25 * 12,
+              survival.time=as.numeric(survival.time),
+              survival.time=ifelse(died, survival.time, NA))
+
+all.data <- tbl.pre %>%
+    summarise(characteristic="all",
+              col="all",
+              n=n(),
+              deaths=sum(died),
+              death.pct=mean(died),
+              surv.25=quantile(survival.time, 0.25, na.rm=TRUE),
+              surv.med=quantile(survival.time, 0.5, na.rm=TRUE),
+              surv.75=quantile(survival.time, 0.75, na.rm=TRUE))
+
+table.1 <- bind_rows(all.data,
+                     tbl.func(tbl.pre, "race"),
+                     tbl.func(tbl.pre, "age.ge.40"),
+                     tbl.func(tbl.pre, "aids.year"),
+                     tbl.func(tbl.pre, "cd4.base"),
+                     tbl.func(tbl.pre, "initial.aids"),
+                     tbl.func(tbl.pre, "second.aids"),
+                     tbl.func(tbl.pre, "depressed"),
+                     tbl.func(tbl.pre, "drug.user"),
+                     tbl.func(tbl.pre, "site"))
+
+knitr::kable(table.1,
+             digits=4,
+             caption="Table 1")
+```
+
+Keri's recommendations:  
+    1. ~~Origin being primary diagnosis is fine~~  
+    2. ~~person time since prim diag is fine~~  
+    3. be careful w/ term time varying exposure  
+    4. ~~covarites: race is fine, age is fine, remove marijauan and poppers from drug~~  
+    5. ~~depression use 23 period~~  
+    6. should depression be mean?  
+    7. ~~CD4 is great~~  
+    8. ~~year of aids diagnosis? restrict to 1996. Censor study at 1996. could categorize year (<90, 90-93, 93-Jul 95, >Jul 95)~~  
+    9. ~~put people back in that had sec aids at baseline.~~  
+    10. timing of secondary aids diagnosis? distribution of prim aids to sec. aids infection?  
+    11. sens. look at dist of survival by type. pick a cutoff that we think is  meaningful. type of primary. i.e. higher median survival, lower median survival.  
+    12. ~~switch propensity scores to ipw~~  
+    13. combinations of prim and sec aids impact. could explore with interaction.  
+    14. ~~Add site~~
