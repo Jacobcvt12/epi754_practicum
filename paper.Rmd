@@ -111,6 +111,16 @@ covariates <- read_csv("data/macswihs_horiz2013_copy-1.csv") %>%
     ungroup() %>%
     tbl_df()
 
+visits <- read_csv("data/hivvert-data04.csv", progress=FALSE,
+                    col_types="iiciiididdiiiiiiiddiiiiiiiiiiiidc") %>%
+    filter(COHORT == 1, 
+           year(mdy(VDATE)) < 1996) %>%
+    mutate(year=year(mdy(VDATE))) %>%
+    group_by(year) %>%
+    summarise(n=n(),
+              t=sum(!is.na(THRPY)),
+              pct=t / n)
+
 # get CENTER
 visits <- read_csv("data/hivvert-data04.csv", progress=FALSE,
                     col_types="iiciiididdiiiiiiiddiiiiiiiiiiiidc") %>%
@@ -347,7 +357,7 @@ knitr::kable(cox.zph(ph.sw)$table,
 
 Survival in months.
 ```{r table1}
-tbl.func <- function(data, col) {
+tbl.func <- function(data, col, sec=FALSE) {
     row.data <- data %>%
         group_by_(col) %>%
         summarise(col=col,
@@ -356,7 +366,22 @@ tbl.func <- function(data, col) {
                   death.pct=mean(died),
                   surv.25=quantile(survival.time, 0.25, na.rm=TRUE),
                   surv.med=quantile(survival.time, 0.5, na.rm=TRUE),
-                  surv.75=quantile(survival.time, 0.75, na.rm=TRUE))
+                  surv.75=quantile(survival.time, 0.75, na.rm=TRUE),
+                  surv.25.2=quantile(survival.time.2, 0.25, na.rm=TRUE),
+                  surv.med.2=quantile(survival.time.2, 0.5, na.rm=TRUE),
+                  surv.75.2=quantile(survival.time.2, 0.75, na.rm=TRUE))
+
+    if (sec) {
+        row.data <- row.data %>%
+            select(-surv.25:-surv.75) %>%
+            rename(surv.25=surv.25.2,
+                   surv.med=surv.med.2,
+                   surv.75=surv.75.2) %>%
+            filter(second.aids != "No Aids")
+    } else {
+        row.data <- row.data %>%
+            select(-surv.25.2:-surv.75.2)
+    }
 
     names(row.data)[1] <- "characteristic"
 
@@ -380,7 +405,11 @@ tbl.pre <- data %>%
               survival.time=difftime(death.date, aids.date, 
                                      units="weeks") / 52.25 * 12,
               survival.time=as.numeric(survival.time),
-              survival.time=ifelse(died, survival.time, NA))
+              survival.time=ifelse(died, survival.time, NA),
+              survival.time.2=difftime(death.date, sec.aids.date,
+                                       units="weeks") / 52.25 * 12,
+              survival.time.2=as.numeric(survival.time.2),
+              survival.time.2=ifelse(died & had.sec, survival.time.2, NA))
 
 all.data <- tbl.pre %>%
     summarise(characteristic="all",
@@ -398,7 +427,7 @@ table.1 <- bind_rows(all.data,
                      tbl.func(tbl.pre, "aids.year"),
                      tbl.func(tbl.pre, "cd4.base"),
                      tbl.func(tbl.pre, "initial.aids"),
-                     tbl.func(tbl.pre, "second.aids"),
+                     tbl.func(tbl.pre, "second.aids", sec=TRUE),
                      tbl.func(tbl.pre, "depressed"),
                      tbl.func(tbl.pre, "drug.user"),
                      tbl.func(tbl.pre, "site"))
@@ -406,6 +435,11 @@ table.1 <- bind_rows(all.data,
 knitr::kable(table.1,
              digits=4,
              caption="Table 1")
+```
+
+```{r sens}
+# do cd4 closest to 2nd aids diag instead
+
 ```
 
 Keri's recommendations:  
